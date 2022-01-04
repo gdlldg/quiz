@@ -9,9 +9,34 @@ import (
 	"log"
 	"os"
 	"strings"
+	"time"
 )
 
-var problemsPath = flag.String("problems_path", "./problems.csv", "Set the file to read problems data, default to problems.csv in current direcotory")
+var (
+	problemsPath = flag.String("problems_path", "./problems.csv", "Set the file to read problems data, default to problems.csv in current direcotory")
+	timeLimit    = flag.Int("time_limit", 30, "Specify a time limit within which user must be able to answer all questions")
+)
+
+type quiz struct {
+	timer *time.Timer
+}
+
+func (q *quiz) run() {
+	go func() {
+		<-q.timer.C
+		q.stop()
+	}()
+	loadProblems()
+	askProblems()
+	checkProblems()
+	q.timer.Stop()
+}
+
+func (q *quiz) stop() {
+	fmt.Println("Time's up!")
+	checkProblems()
+	os.Exit(0)
+}
 
 type problem struct {
 	prompt     string
@@ -30,13 +55,20 @@ func checkErr(e error) {
 func main() {
 	// flag will only be recoganized after parsing
 	flag.Parse()
-	loadProblems()
-	askProblems()
-	checkProblems()
+	fmt.Printf("Current time limit is %d seconds, start the quiz?(Y/n)\n", *timeLimit)
+	r := bufio.NewReaderSize(os.Stdin, 1)
+	input, _ := r.ReadString('\n')
+	if strings.TrimSpace(input) == "Y" {
+		q := quiz{
+			timer: time.NewTimer(time.Duration(*timeLimit) * time.Second),
+		}
+		q.run()
+	}
 }
 
 func loadProblems() {
 	f, err := os.Open(*problemsPath)
+	defer f.Close()
 	checkErr(err)
 	csvReader := csv.NewReader(f)
 	for {
