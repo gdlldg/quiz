@@ -21,6 +21,15 @@ type quiz struct {
 	timer *time.Timer
 }
 
+// I like this pattern of how go handles concurrent operations
+// there are actually two ways of thinking about this problem:
+// this is the first pattern: we consider the timer to be the side
+// routine, reading and checking the answsers to be in the main routine
+// the key of this pattern is when the time runs up in the side routine
+// from the timer, you need to have a way to abort the main routine
+// program, for me here I use os.Exit to achieve it. But I can see this may
+// not always be possible or easy to do. I will add a separate branch
+// to work on a different approach.
 func (q *quiz) run() {
 	go func() {
 		<-q.timer.C
