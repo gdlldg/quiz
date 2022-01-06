@@ -23,20 +23,19 @@ type quiz struct {
 
 // I like this pattern of how go handles concurrent operations
 // there are actually two ways of thinking about this problem:
-// this is the first pattern: we consider the timer to be the side
-// routine, reading and checking the answsers to be in the main routine
-// the key of this pattern is when the time runs up in the side routine
-// from the timer, you need to have a way to abort the main routine
-// program, for me here I use os.Exit to achieve it. But I can see this may
-// not always be possible or easy to do. I will add a separate branch
-// to work on a different approach.
+//
+// For the second pattern: we actually think about what operation
+// is blocking here: apparently that's the processing and getting
+// user anwser, because it's blocked from waiting for user input
+// from stdin
+//
+// a natural consideration here will be we put the blocking operation
+// into a goroutine, so that the timer will not be affected by the blocking
+// process. Actually this is also a common pattern for go, where a switch
+// statement is used to pick whichever comes first from multiple
+// processes (channels)
 func (q *quiz) run() {
-	go func() {
-		<-q.timer.C
-		q.stop()
-	}()
-	loadProblems()
-	askProblems()
+	askProblems(q)
 	checkProblems()
 	q.timer.Stop()
 }
@@ -44,7 +43,6 @@ func (q *quiz) run() {
 func (q *quiz) stop() {
 	fmt.Println("Time's up!")
 	checkProblems()
-	os.Exit(0)
 }
 
 type problem struct {
@@ -71,6 +69,7 @@ func main() {
 		q := quiz{
 			timer: time.NewTimer(time.Duration(*timeLimit) * time.Second),
 		}
+		loadProblems()
 		q.run()
 	}
 }
@@ -93,16 +92,28 @@ func loadProblems() {
 	}
 }
 
-func askProblems() {
+func askProblems(q *quiz) {
 	r := bufio.NewReader(os.Stdin)
 	for i, p := range problems {
 		fmt.Printf("Q: %s, what's your answer?\n", p.prompt)
-		asn, err := r.ReadString('\n')
-		checkErr(err)
-		// NOTE:
-		// 1. remember slice gives you the copy, not the pointer to the original value
-		// 2. values read from bufio contains newline
-		problems[i].userAnswer = strings.TrimSpace(asn)
+		// I'm not feeling awesome about make a channel for each
+		// question...
+		answerChan := make(chan string)
+		go func() {
+			asn, err := r.ReadString('\n')
+			checkErr(err)
+			answerChan <- asn
+		}()
+		select {
+		case <-q.timer.C:
+			q.stop()
+			return
+		case asn := <-answerChan:
+			// NOTE:
+			// 1. remember slice gives you the copy, not the pointer to the original value
+			// 2. values read from bufio contains newline
+			problems[i].userAnswer = strings.TrimSpace(asn)
+		}
 	}
 }
 
